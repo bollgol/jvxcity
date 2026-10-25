@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StudyHub Sync</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<style>
+:root{--bg:#0f1220;--card:#181c2f;--accent:#7c5cff;--text:#eef0ff;--muted:#9aa0b5}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text)}
+header{padding:14px;background:linear-gradient(135deg,#7c5cff,#4f8cff);font-weight:800;font-size:20px;display:flex;justify-content:space-between;align-items:center}
+header button{background:#ffffff22;border:0;color:white;padding:7px 10px;border-radius:8px;font-weight:700}
+nav{display:flex;gap:6px;padding:10px;background:#12162a;position:sticky;top:0;z-index:5}
+nav button{flex:1;padding:10px;border:0;border-radius:10px;background:#20264a;color:var(--text);font-weight:700}
+nav button.active{background:var(--accent)}
+main{padding:14px;max-width:900px;margin:auto;padding-bottom:80px}
+.card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:18px}
+input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #2c3358;background:#10142a;color:var(--text);margin:5px 0}
+button.primary{background:var(--accent);border:0;color:white;padding:10px 14px;border-radius:10px;font-weight:700;cursor:pointer}
+button.small{background:#262c55;border:0;color:var(--text);padding:7px 10px;border-radius:8px;cursor:pointer}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}
+.item{display:flex;justify-content:space-between;gap:10px;align-items:center;background:#20264a;padding:10px;border-radius:10px;margin:8px 0}
+.item.done{opacity:.55;text-decoration:line-through}
+.tag{font-size:12px;background:#333a6b;padding:3px 8px;border-radius:999px}
+.timer{font-size:42px;font-weight:800;text-align:center}
+.controls{display:flex;gap:8px;justify-content:center;margin-top:10px}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.photo{position:relative;border-radius:12px;overflow:hidden;background:#000}
+.photo img{width:100%;height:140px;object-fit:cover;display:block}
+.photo .meta{padding:8px;font-size:12px;background:#181c2f}
+.photo .del{position:absolute;top:6px;right:6px;background:#000a;color:white;border:0;border-radius:8px;padding:4px 7px}
+.empty{color:var(--muted);text-align:center;padding:16px}
+.status{font-size:12px;color:var(--muted);margin:6px 0}
+#authCard{max-width:520px;margin:30px auto}
+</style>
+</head>
+<body>
+<header><div>📚 StudyHub Sync</div><button id="authBtn">Sign in</button></header>
+<nav>
+<button data-tab="timer" class="active">Study</button>
+<button data-tab="schedule">Schedule</button>
+<button data-tab="homework">Homework</button>
+<button data-tab="notes">Notes</button>
+<button data-tab="setup">Sync</button>
+</nav>
+<main>
+<section id="setup" class="tab" hidden>
+<div class="card">
+<h2>Connect cloud sync</h2>
+<p class="status">Create a free Firebase project, enable Google sign-in, Firestore, and Storage, then paste your Firebase config below. The same Google account must be used on your computer and phone.</p>
+<textarea id="fbConfig" rows="8" placeholder='Paste the firebaseConfig object from Firebase Project Settings'></textarea>
+<button class="primary" id="saveConfig">Save and connect</button>
+<button class="small" id="clearConfig">Disconnect</button>
+<div id="setupStatus" class="status"></div>
+</div>
+</section>
+
+<section id="authCard" class="card">
+<h2>Sign in to sync</h2>
+<p class="status">Cloud sync requires signing in with the same Google account on every device.</p>
+<button class="primary" id="googleBtn">Continue with Google</button>
+<div id="authStatus" class="status"></div>
+</section>
+
+<section id="timer" class="tab">
+<div class="card"><h2>Study timer</h2><div class="timer" id="clock">25:00</div>
+<div class="row"><div><label>Subject</label><input id="timerSubject" placeholder="Math, Physics..."></div></div>
+<div class="controls"><button class="primary" id="startBtn">Start</button><button class="small" id="pauseBtn">Pause</button><button class="small" id="resetBtn">Reset</button></div>
+<p class="empty" id="timerStatus">Focus for 25 minutes, then take a 5-minute break.</p></div>
+<div class="card"><h2>Study log</h2><div id="studyLog"></div></div>
+</section>
+
+<section id="schedule" class="tab" hidden>
+<div class="card"><h2>Add event or test</h2>
+<div class="row"><div><label>Title</label><input id="evTitle"></div><div><label>Type</label><select id="evType"><option>Class</option><option>Test</option><option>Assignment</option><option>Co-op</option><option>Other</option></select></div></div>
+<div class="row"><div><label>Date</label><input id="evDate" type="date"></div><div><label>Time</label><input id="evTime" type="time"></div></div>
+<button class="primary" id="addEvent">Add to schedule</button></div>
+<div class="card"><h2>Upcoming</h2><div id="eventList"></div></div>
+</section>
+
+<section id="homework" class="tab" hidden>
+<div class="card"><h2>Add homework</h2>
+<div class="row"><div><label>Task</label><input id="hwTitle"></div><div><label>Subject</label><input id="hwSubject"></div></div>
+<div class="row"><div><label>Due date</label><input id="hwDue" type="date"></div></div>
+<button class="primary" id="addHomework">Add homework</button></div>
+<div class="card"><h2>To do</h2><div id="homeworkList"></div></div>
+</section>
+
+<section id="notes" class="tab" hidden>
+<div class="card"><h2>Add note photos</h2>
+<input type="file" id="noteFiles" accept="image/*" multiple>
+<input id="noteTitle" placeholder="Title, e.g. Physics — kinematics formulas">
+<button class="primary" id="saveNotes">Upload photos</button>
+<p class="status">Photos upload to your private Firebase Storage folder and appear on signed-in devices.</p></div>
+<div class="card"><h2>Note gallery</h2><div id="noteGallery" class="photo-grid"></div></div>
+</section>
+</main>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const LS='studyhubSync_';
+const load=(k,d)=>JSON.parse(localStorage.getItem(LS+k)||JSON.stringify(d));
+const save=(k,v)=>localStorage.setItem(LS+k,JSON.stringify(v));
+let app,auth,db,storage,user=null,unsub=[];
+let events=[],homework=[],logs=[],notes=[];
+let seconds=1500,running=false,interval=null;
+
+$$('nav button').forEach(b=>b.onclick=()=>{ $$('nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.tab').forEach(t=>t.hidden=true);$('#'+b.dataset.tab).hidden=false; });
+
+const savedConfig=localStorage.getItem(LS+'firebaseConfig');
+if(savedConfig){$('#fbConfig').value=savedConfig;initFirebase(JSON.parse(savedConfig));}
+
+$('#saveConfig').onclick=()=>{
+  try{
+    const raw=$('#fbConfig').value.trim().replace(/^const\s+firebaseConfig\s*=\s*/,'').replace(/;\s*$/,'');
+    const cfg=eval('('+raw+')');
+    localStorage.setItem(LS+'firebaseConfig',JSON.stringify(cfg));
+    initFirebase(cfg);
+  }catch(e){$('#setupStatus').textContent='Could not read config: '+e.message}
+};
+$('#clearConfig').onclick=()=>{localStorage.removeItem(LS+'firebaseConfig');location.reload()};
+$('#googleBtn').onclick=()=>{ if(!auth)return $('#authStatus').textContent='Add your Firebase config first.'; auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>$('#authStatus').textContent=e.message); };
+$('#authBtn').onclick=()=>{ if(user)auth.signOut(); else $('#setup').hidden=false,$('#setup').scrollIntoView(); };
+
+function initFirebase(cfg){
+  try{
+    app=firebase.apps.length?firebase.app():firebase.initializeApp(cfg);
+    auth=firebase.auth();db=firebase.firestore();storage=firebase.storage();
+    $('#setupStatus').textContent='Firebase connected. Now sign in with Google.';
+    auth.onAuthStateChanged(u=>{
+      user=u;
+      $('#authCard').hidden=!!u;
+      $('#authBtn').textContent=u?(u.displayName||u.email):'Sign in';
+      unsub.forEach(f=>f());unsub=[];
+      if(u){
+        const base=db.collection('users').doc(u.uid);
+        listen(base.collection('events').orderBy('date'),d=>{events=d;renderEvents()});
+        listen(base.collection('homework').orderBy('due'),d=>{homework=d;renderHomework()});
+        listen(base.collection('logs').orderBy('date','desc'),d=>{logs=d;renderLogs()});
+        listen(base.collection('notes').orderBy('createdAt','desc'),d=>{notes=d;renderNotes()});
+      }else{events=[];homework=[];logs=[];notes=[];renderAll();}
+    });
+  }catch(e){$('#setupStatus').textContent='Firebase error: '+e.message}
+}
+function listen(q,cb){unsub.push(q.onSnapshot(s=>cb(s.docs.map(d=>({id:d.id,...d.data()}))),e=>console.error(e)))}
+
+function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
+function tick(){if(seconds>0){seconds--;$('#clock').textContent=fmt(seconds)}else{stop();logStudy();alert('Session complete!')}}
+function start(){if(!user)return alert('Sign in first');if(running)return;running=true;interval=setInterval(tick,1000);$('#timerStatus').textContent='Studying: '+($('#timerSubject').value||'General')}
+function stop(){running=false;clearInterval(interval)}
+function reset(){stop();seconds=1500;$('#clock').textContent=fmt(seconds);$('#timerStatus').textContent='Focus for 25 minutes.'}
+$('#startBtn').onclick=start;$('#pauseBtn').onclick=()=>{stop();$('#timerStatus').textContent='Paused'};$('#resetBtn').onclick=reset;
+
+function logStudy(){
+  if(!user)return;
+  db.collection('users').doc(user.uid).collection('logs').add({subject:$('#timerSubject').value||'General',minutes:25,date:new Date().toISOString()});
+}
+function renderLogs(){$('#studyLog').innerHTML=logs.length?logs.map(l=>`<div class="item"><span>${l.subject} — ${l.minutes} min</span><span class="tag">${new Date(l.date).toLocaleString()}</span></div>`).join(''):'<div class="empty">No study sessions yet.</div>'}
+
+$('#addEvent').onclick=()=>{
+  if(!user)return alert('Sign in first');const t=$('#evTitle').value.trim();if(!t)return;
+  db.collection('users').doc(user.uid).collection('events').add({title:t,type:$('#evType').value,date:$('#evDate').value,time:$('#evTime').value,createdAt:Date.now()});
+  $('#evTitle').value='';$('#evDate').value='';$('#evTime').value='';
+};
+function renderEvents(){$('#eventList').innerHTML=events.length?events.map(e=>`<div class="item"><span><b>${e.title}</b><br><small>${e.date||''} ${e.time||''}</small></span><span><span class="tag">${e.type}</span> <button class="small" onclick="delItem('events','${e.id}')">Delete</button></span></div>`).join(''):'<div class="empty">No events yet.</div>'}
+
+$('#addHomework').onclick=()=>{
+  if(!user)return alert('Sign in first');const t=$('#hwTitle').value.trim();if(!t)return;
+  db.collection('users').doc(user.uid).collection('homework').add({title:t,subject:$('#hwSubject').value||'General',due:$('#hwDue').value,done:false,createdAt:Date.now()});
+  $('#hwTitle').value='';$('#hwSubject').value='';$('#hwDue').value='';
+};
+function renderHomework(){$('#homeworkList').innerHTML=homework.length?homework.map(h=>`<div class="item ${h.done?'done':''}"><span><b>${h.title}</b><br><small>${h.subject} • Due ${h.due||'no date'}</small></span><span><button class="small" onclick="toggleHw('${h.id}',${!h.done})">${h.done?'Undo':'Done'}</button> <button class="small" onclick="delItem('homework','${h.id}')">Delete</button></span></div>`).join(''):'<div class="empty">No homework yet.</div>'}
+window.toggleHw=(id,done)=>{db.collection('users').doc(user.uid).collection('homework').doc(id).update({done})};
+window.delItem=(coll,id)=>{db.collection('users').doc(user.uid).collection(coll).doc(id).delete()};
+
+$('#saveNotes').onclick=async()=>{
+  if(!user)return alert('Sign in first');
+  const files=[...$('#noteFiles').files];if(!files.length)return alert('Choose photos');
+  const title=$('#noteTitle').value.trim()||'Untitled notes';
+  for(const f of files){
+    const ref=storage.ref(`users/${user.uid}/notes/${Date.now()}_${f.name}`);
+    await ref.put(f);const url=await ref.getDownloadURL();
+    await db.collection('users').doc(user.uid).collection('notes').add({title,img:url,path:ref.fullPath,createdAt:Date.now()});
+  }
+  $('#noteFiles').value='';$('#noteTitle').value='';
+};
+function renderNotes(){$('#noteGallery').innerHTML=notes.length?notes.map(n=>`<div class="photo"><button class="del" onclick="delNote('${n.id}','${n.path}')">✕</button><img src="${n.img}"><div class="meta"><b>${n.title}</b></div></div>`).join(''):'<div class="empty">No note photos yet.</div>'}
+window.delNote=async(id,path)=>{await db.collection('users').doc(user.uid).collection('notes').doc(id).delete();if(path)await storage.ref(path).delete()};
+
+function renderAll(){renderLogs();renderEvents();renderHomework();renderNotes()}
+renderAll();
+</script>
+</body>
+</html>
